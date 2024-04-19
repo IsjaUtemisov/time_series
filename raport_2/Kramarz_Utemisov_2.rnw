@@ -1,0 +1,1929 @@
+\documentclass{article}
+
+
+% dodatkowe pakiety LaTeX'a
+\usepackage[OT4]{polski}
+\usepackage[utf8]{inputenc}
+\usepackage[top=2.5cm, bottom=2.5cm, left=2cm, right=2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage[colorlinks=true, linkcolor=blue]{hyperref}
+\usepackage{url}
+\usepackage{amsfonts}
+% ustawienia globalne
+
+<<ustawienia_globalne, echo=FALSE, include= F>>=
+library(klaR)
+library(knitr)
+library(data.table)
+library(xtable)
+library(dplyr)
+library(kableExtra)
+library(ggplot2)
+library(graphics)
+library(grDevices)
+library(gridExtra)
+library(broom)
+library(forecast)
+library(fpp)
+
+library(quantmod)
+library(TTR)
+
+
+opts_chunk$set(fig.path='figure/', fig.align='center', fig.pos='H',fig.width=5, fig.height=4)
+
+@
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{document}
+
+\title{Raport 2 \\ Analiza szeregów czasowych}
+\author{Zuzanna Kramarz, Isja Utemisov \\ albumy 268836, 268889}
+\maketitle
+\tableofcontents 
+\newpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\section{Zadanie 2 - Dekompozycja szeregów czasowych - eliminacja trendu i sezonowości}
+
+\subsection{Cel zadania}
+
+Celem zadania jest przeprowadzenie analizy szeregu czasowego w kontekście eliminacji trendu i sezonowości. Analiza obejmuje zastosowanie oraz porównanie trzech metod dekompozycji: decompose(), tslm(), oraz stl(). W trakcie analizy uwzględnione zostaną także różne parametry i transformacje danych w celu oceny wpływu na jakość dopasowania.
+
+\subsection{Wybór Szeregu Czasowego}
+
+<<wybor_szeregu_czasowego, echo=FALSE, include= F>>=
+
+# Dołączanie danych hotele [dane]
+
+# Instalacja i załadowanie niezbędnych pakietów
+library(TSAFBook)
+
+data(package = "TSAFBook") # lista zbiorów danych dostępnych w wybranym pakiecie
+
+# Wczytanie danych szeregu czasowego
+data("hotele")
+dane <- hotele
+
+@
+
+Analizę przeprowadzimy dla szeregu czasowego \textit{hotele\{TSAFBook\}}, pakiet danych "hotele" w ramach zbioru TSAFBook zawiera informacje dotyczące miesięcznej liczby turystów (gości hotelowych) odwiedzających województwo Dolnośląskie w Polsce. 
+
+\subsection{Analiza podstawowych własności szeregu}
+
+Dokonamy analizy wstępnej szeregu czasowego. Wykorzystamy do tego metody graficzne, takie jak wykresy zwykłe i sezonowe, aby zidentyfikować obecności trendu, sezonowości oraz obserwacji odstających.
+
+\subsubsection{Wykres zwykły}
+
+<<zad2_wykres_zwykly, echo=FALSE, eval = T, results='asis', fig.cap = "Wykresy zwykły dla danych szeregu czasowego - Hotele", fig.width=7, fig.height=4>>=
+
+autoplot(dane)
+
+@
+
+Wnioski:\\
+Obecność regularnych wzorców wzrostu i spadku, powtarzających się w określonych okresach, sugeruje obecność sezonowości w danych. Wzorce te odpowiadają pewnym cyklom czasowym, co może wskazywać na sezonową zmienność w ruchu turystycznym. Na wykresie wyraźnie widoczny jest trend wzrostowy, szczególnie do roku 2013. Obserwacja, że zmienność rośnie wraz z poziomem szeregu, sugeruje możliwość występowania sezonowości multiplikatywnej. To znaczy, że zmienność nie jest stała w czasie, a jej wzrost zależy od poziomu szeregu czasowego. 
+
+\subsubsection{Wykres sezonowy}
+
+<<zad2_wykres_sezonowy, echo=FALSE, eval = T, results='asis', fig.cap = "Wykres sezonowy dla danych szeregu czasowego - Hotele", fig.width=7, fig.height=6>>=
+
+ggseasonplot(dane)
+
+@
+
+Wnioski:\\
+Wykres sugeruje silną sezonowość związaną z miesiącami. W okresie wiosennym obserwujemy wyraźny wzrost liczby gości hotelowych, osiągając maksimum w maju. Od maja do czerwca/lipca, notujemy niewielki spadek liczby gości. Póżniej zauważamy ponowny wzrost aż do sierpnia, który charakteryzuje się najwyższą liczbą gości hotelowych w porównaniu do innych miesięcy, to może być związane z letnimi wakacjami i wzmożoną aktywnością turystyczną. Okres od września do listopada charakteryzuje się znacznym spadkiem. Po spadku w listopadzie, obserwujemy mały wzrost liczby gości w grudniu i styczniu. Wnioski te sugerują, że sezonowość w danych jest ściśle związana z porą roku.
+
+\subsubsection{Wykres miesięczny}
+
+<<zad2_wykres_miesieczny, echo=FALSE, eval = T, results='asis', fig.cap = "Wykres miesieczny dla danych szeregu czasowego - Hotele", fig.width=7, fig.height=6>>=
+
+ggmonthplot(dane)
+
+@
+
+Wnioski:\\
+Wykres potwierdza wcześniejsze wnioski -  wyraźne sezonowe zmiany w ruchu turystycznym. Miesiące cieplejsze, zwłaszcza lato, wykazują tendencję wzrostową, osiągając najwyższe wartości w sierpniu. 
+
+\subsubsection{Wykres ACF i PACF}
+
+<<zad2_wykres_acf_pacf, echo=FALSE, eval = T, results='asis', fig.cap = "Wykresy ACF i PACF dla danych szeregu czasowego - Hotele", fig.width=7, fig.height=7>>=
+
+par(mfrow = c(2, 1))
+  
+# Wykres ACF
+acf(dane, main = "Funkcja Autokorelacji (ACF)")
+  
+# Wykres PACF
+pacf(dane, main = "Funkcja Czastkowej Autokorelacji (PACF)")
+
+
+@
+
+Wnioski:\\
+Na wykresie ACF możemy zauwazyć obecność regularnych wzorców spadku i wzrostu, potwierdza to sezonowość w danych. Ten rodzaj wzoru może wskazywać na sezonową zależność między obserwacjami. Obserwacja wartości funkcji autokorelacji wychodzących poza przedział ufności sugeruje, że dane zawierają pewne struktury niestandardowe, więc możemy wnioskować, że szereg czasowy nie jest białym szumem. Obecność sezonowości wskazuje na brak stacjonarności w szeregu czasowym.
+
+\subsubsection{Wykres pudełkowy}
+
+<<zad2_wykres_pudelkowy, echo=FALSE, eval = T, results='asis', fig.cap = "Wykres pudełkowy dla danych szeregu czasowego - Hotele", fig.width=7, fig.height=6>>=
+
+# Wykres pudełkowy
+  
+boxplot(dane ~ cycle(dane), names = month.name, main = "Boxplot dla danych szeregu czasowego - Hotele",  col = "lightsteelblue1", las = 2, xlab = "", ylab = "")
+
+@
+
+Wnioski:\\
+Widoczne większe zakresy oraz wyższe wartości dla cieplejszych miesięcy potwierdzają sezonowość w danych, co jest zgodne z wcześniejszymi analizami. Brak wartości odstających wskazuje na to, że dane w poszczególnych miesiącach nie odbiegają znacząco od ogólnego wzorca sezonowego. 
+
+\subsubsection{Wykres rozrzutu dla opoźnienia h=1,...,12}
+
+<<zad2_wykres_rozrzutu, echo=FALSE, eval = T, results='asis', fig.cap = "Wykres rozrzutu dla danych szeregu czasowego - Hotele", fig.width=7, fig.height=6>>=
+
+lag.plot(dane, lags=12)
+
+@
+
+Wnioski:\\
+Wykres pokazuje, że największa korelacja występuje dla opóźnienia 12 miesięcy, co potwierdza sezonowość danych. Oznacza to, że obserwacje są silnie skorelowane z obserwacjami z tego samego miesiąca z poprzednich lat. Brak wyraźnych skorelowanych opóźnień poza 12 miesiącami może sugerować, że sezonowość stanowi dominujący czynnik wpływający na szereg czasowy.
+
+\newpage
+
+\subsection{Zastosowanie i porównanie metod dekompozycji}
+
+\subsubsection{Dekompozycja na podstawie ruchomej średniej (funkcja decompose())}
+
+Przy pomocy funkcji \textit{decompose()} przeprowadzimy analizę szeregu czasowego, wykonując dekompozycję zarówno wersji addytywnej, jak i multiplikatywnej przy użyciu ruchomej średniej. W obu przypadkach zidentyfikujemy składowe takie jak trend, sezonowość i reszty.
+Przedstawimy wykresy składowych oraz przeanalizujemy reszty pod kątem sezonowości, białego szumu i stacjonarności.
+
+\begin{itemize}
+
+\item Dekompozycja addytywna
+
+<<zad2_a, echo=T, eval = T>>=
+
+# dekompozycja addytywna
+dekomp.add <- decompose(dane, type="additive")
+
+# dekompozycja addytywna - składowe
+dekomp.add.trend <- dekomp.add$trend
+dekomp.add.sezonowosc <- dekomp.add$seasonal
+dekomp.add.reszty <-dekomp.add$random
+
+@
+
+\begin{enumerate}
+
+\item Wykresy szeregu i składowych  dekompozycji
+
+<<zad2_a_1_1, echo=FALSE, eval = T, results='asis', fig.cap = "Wykresy szeregu i składowych - dekompozycja addytywna", fig.width=7, fig.height=5>>=
+
+autoplot(dekomp.add, main = "Wykresy szeregu i skladowych dekompozycji")
+
+@
+
+Wnioski:\\
+Analiza wykresu dekompozycji addytywnej potwierdza, że szereg czasowy charakteryzuje się:\\
+Rosnącym Trendem -  wartości trendu rosną w miarę upływu czasu.\\
+Obecnością Sezonowości - występują regularne wzorce sezonowe w danych.\\
+Te obserwacje potwierdzają wcześniejsze wnioski dotyczące charakterystyki szeregu czasowego.
+
+\item Wykres reszt
+
+Nastepnie zajmiemy się analizą reszt uzyskanych w wyniku dekompozycji addytywnej szeregu czasowego. Reszty w kontekście analizy szeregów czasowych to pozostałości po odjęciu składowych trendu i sezonowości od oryginalnego szeregu danych. Poniżej wyświetlamy wykres reszt.
+
+<<zad2_a_1, echo=FALSE, eval = T, results='asis', fig.cap = "Wykres reszt - dekompozycja addytywna", fig.width=7, fig.height=5>>=
+
+dekomp.add.reszty <- na.omit(dekomp.add.reszty)
+ggtsdisplay(dekomp.add.reszty)
+
+@
+
+Wnioski:\\
+Wykres reszt ukazuje, że istnieją pewne pozostałości sezonowości, co sugeruje, że dekompozycja addytywna nie całkowicie eliminuje sezonowości z danych.\\
+Reszty nie są białym szumem, ponieważ na wykresie ACF jest za dużo wartości poza przedziałem ufności.\\
+Analiza wariancji reszt wskazuje, że nie ma jednorodności wariancji. Wariancja reszt zmienia się w miarę upływu czasu, z mniejszymi wartościami w pewnych okresach, co sugeruje brak stacjonarności w danych.
+
+\item Indykator sezonowości
+
+W kolejnym etapie analizy skupimy się na badaniu indykatora sezonowości, uzyskanego w wyniku dekompozycji addytywnej szeregu czasowego. Indykator ten stanowi istotny element, pozwalający zidentyfikować wzorce sezonowe w danych. Poniżej przedstawiamy wizualizację indykatora sezonowości za pomocą wykresu czasowego oraz wykresu słupkowego dla poszczególnych miesięcy.
+
+<<zad2_a_2, echo=FALSE, eval = T, results='asis', fig.cap = "Wykresy indykatora sezonowości - dekompozycja addytywna", fig.width=7, fig.height=4>>=
+
+# indykator sezonowości [ind.add.sezon]
+
+ind.add.sezon <- dekomp.add$figure
+
+autoplot(ts(ind.add.sezon))
+
+
+kolory_niebieskie <- colorRampPalette(c("lightblue", "darkblue"))(length(month.name))
+
+# Wykres słupkowy
+barplot(ind.add.sezon, names=month.name, las=2, col=kolory_niebieskie)
+
+@
+
+Wnioski:\\
+Na wykresie czasowym indykatora sezonowości można zauważyć wyraźne wzrosty w określonych miesiącach. Analiza wykresu słupkowego dla poszczególnych miesięcy ujawnia ewidentne wzorce sezonowe. Obserwujemy regularne spadki zimą i wzrosty latem, co potwierdza obecność sezonowości w danych.
+
+\end{enumerate}
+
+\item Dekompozycja multiplikatywna
+
+Dekompozycja multiplikatywna polega na tym, że rozkładamy szereg w taki sposób, że jest równy iloczynowi trendu, sezonowości i losowej reszty. Reszty w dekompozycji multiplikatywnej są zwykle bliskie 1, w przeciwieństwie do dekompozycji addytywnej, gdzie były one bliskie zera. W związku z tym, poziomem odniesienia dla składowej sezonowej w dekompozycji multiplikatywnej jest jedynka.
+
+<<zad2_b, echo=T, eval = T>>=
+
+# dekompozycja multiplikatywna 
+dekomp.mul <- decompose(x=dane, type="multiplicative")
+
+# dekompozycja multiplikatywna - składowe 
+dekomp.mul.trend <- dekomp.mul$trend
+dekomp.mul.sezonowosc <- dekomp.mul$seasonal
+dekomp.mul.reszty <-dekomp.mul$random
+
+@
+
+\begin{enumerate}
+
+\item Wykresy szeregu i składowych  dekompozycji
+
+<<zad2_b_1_1, echo=FALSE, eval = T, results='asis', fig.cap = "Wykresy szeregu i składowych - dekompozycja multiplikatywna", fig.width=7, fig.height=5>>=
+
+autoplot(dekomp.mul, main = "Wykresy szeregu i skladowych dekompozycji")
+
+@
+
+\item Wykres reszt
+
+<<zad2_b_1, echo=FALSE, eval = T, results='asis', fig.cap = "Wykres reszt - dekompozycja multiplikatywna", fig.width=7, fig.height=5>>=
+
+dekomp.mul.reszty <- na.omit(dekomp.mul.reszty)
+ggtsdisplay(dekomp.mul.reszty)
+
+@
+
+\item Indykator sezonowości
+
+<<zad2_b_2, echo=FALSE, eval = T, results='asis', fig.cap = "Wykresy indykatora sezonowości - dekompozycja multiplikatywna", fig.width=7, fig.height=4>>=
+
+# indykator sezonowości [ind.add.sezon]
+
+ind.mul.sezon <- dekomp.mul$figure
+autoplot(ts(ind.mul.sezon))
+
+kolory_zielone <- colorRampPalette(c("lightgreen", "darkgreen"))(length(month.name))
+barplot(ind.mul.sezon, names=month.name, las=2, col=kolory_zielone)
+abline(a=1, b=0, col="black", lwd=1)
+
+@
+
+\end{enumerate}
+
+Wnioski:\\
+Analiza dekompozycji multiplikatywnej wskazuje, że struktura szeregu czasowego jest podobna do dekompozycji addytywnej. Oba podejścia dostarczają zbliżone wyniki, co może sugerować, że wybór między nimi nie ma kluczowego znaczenia w analizie tego konkretnego szeregu czasowego.
+
+\end{itemize}
+
+Zobaczymy, jak dane dekompozycje addytywna i multiplikatywna poradziły sobie z dopasowaniem do naszych danych.
+
+<<ruchoma_srednia_dopasowanie, echo = FALSE, eval = TRUE, fig.cap = "Wykres dopasowania modeli dekompozycji na podstawie ruchomej średniej", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+fit.dekomp.add <- dekomp.add.trend + dekomp.add.sezonowosc
+fit.dekomp.mul <- dekomp.mul.trend * dekomp.mul.sezonowosc
+
+autoplot(cbind(dane, fit.dekomp.add, fit.dekomp.mul), lwd=0.7)
+
+@
+
+
+Model addytywny zakłada, że składniki składowe (trend, sezonowość) są dodawane do siebie. Wydaje się, że dekompozycja addytywna nie radzi sobie idealnie z dopasowaniem do danych. W niektórych miejscach występują różnice między modelem a rzeczywistymi danymi, co sugeruje, że ten model może niedoszacowywać pewnych nieregularności.
+
+Model multiplikatywny zakłada, że składniki składowe są mnożone przez siebie nawzajem. W porównaniu z dekompozycją addytywną, dekompozycja multiplikatywna zdaje się lepiej dostosowywać do danych. Krzywe dopasowania są bliższe rzeczywistym danym. Model ten może lepiej uwzględniać zmienność wzorców sezonowych i bardziej stabilnie oddać nieregularności.
+
+W związku z powyższym, dekompozycja multiplikatywna wydaje się być bardziej odpowiednia dla analizowanego szeregu czasowego, gdyż lepiej odwzorowuje zmienność sezonową i jest bardziej precyzyjna w modelowaniu różnic między modelem a rzeczywistymi danymi. Zatem dekompozycja multiplikatywna będzie reprezentowała dekompozycję na podstawie ruchomej średniej w porównaniu metod dekompozycji szeregu czasowego.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{Dekompozycja na podstawie modelu regresji (funkcja tslm())}
+
+Przy pomocy funkcji \textit{tslm()} przeprowadzimy analizę szeregu czasowego, wykonując dekompozycję na podstawie modelu regresji dla różnych modeli parametrycznych dla trendu (np. wielomiany różnych stopni).
+
+\begin{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\item Trend liniowy
+
+<<trendliniowy_model, echo=TRUE, eval = TRUE>>=
+
+model1 <- tslm(dane~trend) 
+
+@
+
+Wyznaczymy szczegółowe informacje dotyczące modelu, takie jak współczynniki regresji, wartości t-statystyki, $R^2$ za pomocą funkcji \textit{summary}.
+
+<<trendliniowy_summary, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model1)$r.squared
+
+@
+
+Sporządzimy wykres diagnostyczny dla danego modelu szeregu czasowego.
+
+<<trendliniowy_summary456, echo = FALSE, eval = TRUE, fig.cap = "Wykres diagnostyczny: model 1, trend liniowy", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+ggtsdisplay(residuals(model1))
+
+@
+
+Wnioski:\\
+
+\begin{itemize}
+
+    \item Nasz model to: dane = 148006.1 + 615.2 * trend
+    \item Wartość $R^2$ dla trendu liniowego wynosi 0.1109. Oznacza to, że około 11.09\% zmienności w danych może być wyjaśnione przez model liniowy. Wartość ta nie jest bardzo wysoka, co sugeruje, że trend liniowy nie tłumaczy znacznej części zmienności w danych.
+    \item Test istotności dla obu współczynników modelu pokazuje, czy te współczynniki są statystycznie istotne.
+    \item Na wykresie diagnostycznym widac pozostałości sezonowości, trend w zasadzie jest usunięty.
+
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\item Trend liniowy + sezonowość
+
+<<trendliniowyisezonowosc_model44334, echo=TRUE, eval = TRUE>>=
+
+model2 <- tslm(dane~trend+season) 
+
+@
+
+Wyznaczymy szczegółowe informacje dotyczące modelu, takie jak współczynniki regresji, wartości t-statystyki, $R^2$ za pomocą funkcji \textit{summary}.
+
+<<trendliniowyisezon_summary2354, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model2)$r.squared
+
+@
+
+Sporządzimy wykres diagnostyczny dla danego modelu szeregu czasowego.
+
+<<trendliniowyisezon_summary7643, echo = FALSE, eval = TRUE, fig.cap = "Wykres diagnostyczny: model 1, trend liniowy", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+ggtsdisplay(residuals(model2))
+
+@
+
+Wnioski:\\
+
+\begin{itemize}
+
+    \item Nasz model to: dane = 117103.44 + 698.14 * trend + $\sum_{i=2}^{12} \text{season}_i$
+    \item Wartość $R^2$ dla modelu z trendem liniowym i sezonowością wynosi 0.9672. Oznacza to, że około 96.72\% zmienności w danych może być wyjaśnione przez ten model. To znacznie lepsze dopasowanie niż w przypadku modelu z samym trendem liniowym.
+    \item Wszystkie współczynniki modelu są uznawane za istotne statystycznie, z wyjątkiem niektórych sezonów (season2, season3, season11, season12), które nie są istotne. Oznacza to, że te sezonowe składniki nie mają statystycznie istotnego wpływu na szereg czasowy.
+
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\item Trend kwadratowy + sezonowość
+
+<<trendkwadratowy_model763, echo=TRUE, eval = TRUE>>=
+
+model3 <- tslm(dane~trend+season+I(trend^2)) 
+
+@
+
+Wyznaczymy szczegółowe informacje dotyczące modelu, takie jak współczynniki regresji, wartości t-statystyki, $R^2$ za pomocą funkcji \textit{summary}.
+
+<<trendkwadratowy_summary6567, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model3)$r.squared
+
+@
+
+Sporządzimy wykres diagnostyczny dla danego modelu szeregu czasowego.
+
+<<trendkwadratowy_summary436578, echo = FALSE, eval = TRUE, fig.cap = "Wykres diagnostyczny: model 1, trend liniowy", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+ggtsdisplay(residuals(model3))
+
+@
+
+Wnioski:\\
+
+\begin{itemize}
+
+    \item Nasz model to: dane = 113004.087 + 1133.225 * trend - 6.798 * $trend^2$ + $\sum_{i=2}^{12} \text{season}_i$
+    \item Wartość $R^2$ dla modelu z trendem kwadratowym i sezonowością wynosi 0.9706. Oznacza to, że około 97.06\% zmienności w danych może być wyjaśnione przez ten model. To jeszcze lepsze dopasowanie niż w przypadku modelu z trendem liniowym i sezonowością.
+    \item Wszystkie współczynniki modelu są uznawane za istotne statystycznie, z wyjątkiem niektórych sezonów (season2, season3, season11), które nie są istotne. Oznacza to, że te sezonowe składniki nie mają statystycznie istotnego wpływu na szereg czasowy. Współczynnik przy $trend^2$ jest również istotny statystycznie, co sugeruje, że wprowadzenie składnika kwadratowego do modelu jest uzasadnione.
+
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\item Trend sześcienny + sezonowość
+
+<<trendszescienny_model45678, echo=TRUE, eval = TRUE>>=
+
+model4 <- tslm(dane~season + poly(trend, raw = FALSE, degree = 3)) 
+
+@
+
+Wyznaczymy szczegółowe informacje dotyczące modelu, takie jak współczynniki regresji, wartości t-statystyki, $R^2$ za pomocą funkcji \textit{summary}.
+
+<<trendszescienny_summary989898, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model4)$r.squared
+
+@
+
+Sporządzimy wykres diagnostyczny dla danego modelu szeregu czasowego.
+
+<<trendszescienny_summary78989045, echo = FALSE, eval = TRUE, fig.cap = "Wykres diagnostyczny: model 1, trend liniowy", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+ggtsdisplay(residuals(model4))
+
+@
+
+Wnioski:\\
+
+\begin{itemize}
+
+    \item Nasz model to: dane = 139707.8 + 100425.3 * trend - 15952.9 * $trend^2$ - 19551.8 * $trend^3$ + $\sum_{i=2}^{12} \text{season}_i$
+    \item Wartość $R^2$ dla modelu z trendem sześciennym i sezonowością wynosi 0.9759. Oznacza to, że około 97.59\% zmienności w danych może być wyjaśnione przez ten model. Jest to bardzo wysoka wartość, co wskazuje na doskonałe dopasowanie modelu do danych.
+    \item Wszystkie współczynniki modelu są uznawane za istotne statystycznie, z wyjątkiem niektórych sezonów (season2, season3, season11), które nie są istotne. Zarówno sezonowe składniki, jak i składniki trendu sześciennego mają istotny wpływ na szereg czasowy.
+
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\item Trend stopnia 4 + sezonowość
+
+<<trend4_model7687, echo=TRUE, eval = TRUE>>=
+
+model5 <- tslm(dane~season + poly(trend, raw = FALSE, degree = 4)) 
+
+@
+
+Wyznaczymy szczegółowe informacje dotyczące modelu, takie jak współczynniki regresji, wartości t-statystyki, $R^2$ za pomocą funkcji \textit{summary}.
+
+<<trend4y_summary3434576, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model5)$r.squared
+
+@
+
+Sporządzimy wykres diagnostyczny dla danego modelu szeregu czasowego.
+
+<<trend4_summary677954, echo = FALSE, eval = TRUE, fig.cap = "Wykres diagnostyczny: model 1, trend liniowy", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+ggtsdisplay(residuals(model5))
+
+@
+
+Wnioski:\\
+
+\begin{itemize}
+
+    \item Nasz model to: dane = 139279.5 + 100425.3 * trend - 15538.3 * $trend^2$ - 19551.8 * $trend^3$ + 7098.3 * $trend^4$ + $\sum_{i=2}^{12} \text{season}_i$
+    \item Wartość $R^2$ dla modelu z trendem stopnia 4 i sezonowością wynosi 0.9765. Oznacza to, że około 97.65\% zmienności w danych może być wyjaśnione przez ten model. Jest to bardzo wysoka wartość, ale ona jest tylko nieco większa dla modelu z trendem sześciennym. 
+    \item Wszystkie współczynniki modelu są uznawane za istotne statystycznie, z wyjątkiem niektórych sezonów (season2, season3, season11), które nie są istotne.  Zarówno sezonowe składniki, jak i składniki trendu stopnia 4 mają istotny wpływ na szereg czasowy.
+
+\end{itemize}
+
+\end{itemize}
+
+Zobaczymy, jak te cztery modele poradziły sobie z dopasowaniem do naszych danych.
+
+<<tslm_dopasowanie656798, echo = FALSE, eval = TRUE, fig.cap = "Wykres dopasowania modeli dekompozycji na podstawie modelu regresji", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+par(mfrow = c(2, 1))
+
+fit.tslm.model.1 <- fitted(model1)
+fit.tslm.model.2 <- fitted(model2)
+fit.tslm.model.3 <- fitted(model3)
+fit.tslm.model.4 <- fitted(model4)
+fit.tslm.model.5 <- fitted(model5)
+
+autoplot(cbind(dane, fit.tslm.model.1, fit.tslm.model.2, fit.tslm.model.3), lwd=0.7)
+
+autoplot(cbind(dane, fit.tslm.model.4, fit.tslm.model.5), lwd=0.7)
+
+@
+
+Można zauważyć, że modele 3 i 4 najbardziej się dopasowały. Porównujemy je osobno na wykresie niżej.
+
+<<tslm_dopasowanie456432, echo = FALSE, eval = TRUE, fig.cap = "Wykres dopasowania modeli dekompozycji na podstawie modelu regresji", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+
+autoplot(cbind(dane, fit.tslm.model.3, fit.tslm.model.4), lwd=0.7)
+
+@
+
+Model 4 (czyli trend sześcienny + sezonowość) najlepiej się dopasował do naszych danych i będzie reprezentował dekompozycję STL w porównaniu metod dekompozycji szeregu czasowego. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{Dekompozycja STL oparta na metodzie loess (funkcja stl())}
+
+Przy pomocy funkcji \textit{stl()} przeprowadzimy analizę szeregu czasowego, wykonując dekompozycję na podstawie metody loess dla różnych parametrów wygładzajacych \textit{s.window} i \textit{t.window}.
+
+\begin{itemize}
+
+\item Model 1: s.window='periodic', t.window - domyślne
+
+<<stl_model156, echo=TRUE, eval = TRUE>>=
+
+stl1 <- stl(dane, s.window="periodic")
+
+stl_1_trend <- trendcycle(stl1)
+stl_1_sezonowosc <- seasonal(stl1)
+stl_1_reszty <- remainder(stl1)
+
+@
+
+Wykres składowych zamieszczamy na rysunku niżej.
+
+<<stl_model1345, echo = FALSE, eval = TRUE, fig.cap = "Wykres składowych: stl, model 1", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+autoplot(cbind(stl_1_trend, stl_1_sezonowosc, stl_1_reszty), facet=TRUE)
+
+@
+
+Dostajemy stały wzorzec wahań sezonowych w kolejnych latach, czyli sezonowość jest funkcją okresową o okresie 12.
+
+Sprawdzimy następnie, jak dany model dopasował się do naszych danych.
+
+<<stl_model1_pas, echo = FALSE, eval = TRUE, fig.cap = "Wykres dopasowania modelu do danych: stl, model 1", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+fit.stl_1 <- trendcycle(stl1) + seasonal(stl1)
+autoplot(cbind(dane, fit.stl_1), lwd=1) 
+
+@
+
+Model dobrze oddaje ogólny trend i sezonowość, ale można zauważyć pewną niedoszacowaną zmienność w danych, co sugeruje, że pewne nieregularności nie zostały uwzględnione.
+
+\item Model 2: s.window=7, t.window - domyślne
+
+<<stl_model257, echo=TRUE, eval = TRUE>>=
+
+stl2 <- stl(dane, s.window=7)
+
+stl_2_trend <- trendcycle(stl2)
+stl_2_sezonowosc <- seasonal(stl2)
+stl_2_reszty <- remainder(stl2)
+
+@
+
+Wykres składowych zamieszczamy na rysunku niżej.
+
+<<stl_model2456, echo = FALSE, eval = TRUE, fig.cap = "Wykres składowych: stl, model 2", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+autoplot(cbind(stl_2_trend, stl_2_sezonowosc, stl_2_reszty), facet=TRUE)
+
+@
+
+Sprawdzimy następnie, jak dany model dopasował się do naszych danych.
+
+<<stl_model2_pas456, echo = FALSE, eval = TRUE, fig.cap = "Wykres dopasowania modelu do danych: stl, model 2", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+fit.stl_2 <- trendcycle(stl2) + seasonal(stl2)
+autoplot(cbind(dane, fit.stl_2), lwd=1) 
+
+@
+
+Model ładnie uchwytuje ogólny trend i sezonowość, ale nadal może istnieć pewna niedoszacowana zmienność, zwłaszcza w okresach, gdzie sezonowość się zmienia.
+
+\item Model 3: s.window=13, t.window - domyślne
+
+<<stl_model3456789, echo=TRUE, eval = TRUE>>=
+
+stl3 <- stl(dane, s.window=13)
+
+stl_3_trend <- trendcycle(stl3)
+stl_3_sezonowosc <- seasonal(stl3)
+stl_3_reszty <- remainder(stl3)
+
+@
+
+Wykres składowych zamieszczamy na rysunku niżej.
+
+<<stl_model3456, echo = FALSE, eval = TRUE, fig.cap = "Wykres składowych: stl, model 3", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+autoplot(cbind(stl_3_trend, stl_3_sezonowosc, stl_3_reszty), facet=TRUE)
+
+@
+
+Sprawdzimy następnie, jak dany model dopasował się do naszych danych.
+
+<<stl_model3_pas4567, echo = FALSE, eval = TRUE, fig.cap = "Wykres dopasowania modelu do danych: stl, model 3", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+fit.stl_3 <- trendcycle(stl3) + seasonal(stl3)
+autoplot(cbind(dane, fit.stl_3), lwd=1) 
+
+@
+
+Model elastyczny dobrze radzi sobie z ogólnym trendem i bardziej zmienną sezonowością, ale może być podatny na nadmierne dopasowanie do krótkoterminowych zmian, co można zaobserwować w okresach intensywnych zmian.
+
+\item Model 4: s.window=13, t.window=7
+
+<<stl_model4766767, echo=TRUE, eval = TRUE>>=
+
+stl4 <- stl(dane, s.window=13, t.window=7)
+
+stl_4_trend <- trendcycle(stl4)
+stl_4_sezonowosc <- seasonal(stl4)
+stl_4_reszty <- remainder(stl4)
+
+@
+
+Wykres składowych zamieszczamy na rysunku niżej.
+
+<<stl_model4544567, echo = FALSE, eval = TRUE, fig.cap = "Wykres składowych: stl, model 4", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+autoplot(cbind(stl_4_trend, stl_4_sezonowosc, stl_4_reszty), facet=TRUE)
+
+@
+
+Sprawdzimy następnie, jak dany model dopasował się do naszych danych.
+
+<<stl_model4_pas8789, echo = FALSE, eval = TRUE, fig.cap = "Wykres dopasowania modelu do danych: stl, model 4", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+fit.stl_4 <- trendcycle(stl4) + seasonal(stl4)
+autoplot(cbind(dane, fit.stl_4), lwd=1) 
+
+@
+
+Model radzi sobie dobrze z ogólnym trendem i bardziej zmienną sezonowością, ale wygładzanie trendu może prowadzić do niedoszacowania pewnych krótkoterminowych zmian, zwłaszcza w okresach intensywnych zmian.
+
+\end{itemize}
+
+Spróbujemy teraz porównać dopasowanie modeli do danych na jednym wykresie.
+
+<<stl_wszystkie5445678, echo = FALSE, eval = TRUE, fig.cap = "Wykres dopasowania modeli stl do danych", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+par(mfrow = c(2, 1))
+
+autoplot(cbind(dane, fit.stl_1, fit.stl_2), lwd=0.7)
+
+autoplot(cbind(dane, fit.stl_3, fit.stl_4), lwd=0.7)
+
+@
+
+Można zauważyć, że modele 2 i 4 najbardziej się dopasowały. Porównujemy je osobno na wykresie niżej.
+
+<<stl_wszystkie3246567, echo = FALSE, eval = TRUE, fig.cap = "Wykres dopasowania modeli STL do danych", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+autoplot(cbind(dane, fit.stl_2, fit.stl_4), lwd=0.7)
+
+@
+
+Model 4 (o parametrach s.window=13, t.window=7) najlepiej się dopasował do naszych danych i będzie reprezentował dekompozycję STL w porównaniu metod dekompozycji szeregu czasowego. 
+
+Skupimy się teraz na cześciach sezonowych dla różnych dekompozycji STL
+
+<<czesci_sezonowe_stl, echo = FALSE, eval = TRUE, fig.cap = "Wykres dopasowania modeli STL do danych", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+stl.1.sezon <- ts(seasonal(stl1))
+stl.2.sezon <- ts(seasonal(stl2))
+stl.3.sezon <- ts(seasonal(stl3))
+stl.4.sezon <- ts(seasonal(stl4))
+
+# Porównanie wykresów cześci sezonowej dla różnych dekompozycji STL
+autoplot(cbind(stl.1.sezon, stl.2.sezon, stl.3.sezon, stl.4.sezon),
+         facet=TRUE, lwd=1,
+         main="Część sezonowa dla różnych dekompozycji STL",
+         ylab="")
+
+@
+
+Widać, że nie ma istotnych różnic pomiędzy powyższymi wykresami.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{Porównanie jakości dopasowania poszczególnych modeli dekompozycji}
+
+Sporządzimy wykres dopasowania najlepszych modeli, a mianowicie:
+
+\begin{itemize}
+
+\item dekompozycja na podstawie ruchomej średniej — dekompozycja multiplikatywna;
+\item dekompozycja na podstawie modelu regresji — model 4 (trend sześcienny + sezonowość);
+\item dekompozycja STL oparta na metodzie loess — model 4 (o parametrach s.window=13, t.window=7).
+
+\end{itemize}
+
+<<wielkie_porownanie, echo = FALSE, eval = TRUE, fig.cap = "Wykres dopasowania modeli różnych metod dekompozycji do danych", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+# Porównanie wszystkich "najlepszych domyślnych" dopasowań
+autoplot(cbind(dane, fit.dekomp.mul, fit.tslm.model.4, fit.stl_4), lwd=0.7)
+
+@
+
+Ogólnie rzecz biorąc, każdy z tych modeli prezentuje dobrą jakość dopasowania do danych, ale najlepiej sobie poradziła metoda dekompozycji STL oparta na metodzie loess — model 4 (o parametrach s.window=13, t.window=7).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Zastosowanie transformacji Boxa–Coxa}
+
+W tym podpunkcie spróbujemy rozstrzygnąć, czy zastosowanie transformacji Boxa–Coxa prowadzi do poprawy jakości dopasowania modeli dekompozycji. Będziemy rozpatrywać kilka wartości parametru $\lambda$: 0 oraz za optymalne wartości za pomocą funkcji \textit {BoxCox.lambda()}.
+
+\subsubsection{Dekompozycja na podstawie ruchomej średniej}
+
+Na początku wyznaczamy optymalne parametry $\lambda$ za pomocą funkcji \textit {BoxCox.lambda()}.
+
+<<zad120, echo = TRUE, eval = TRUE>>=
+
+BoxCox.lambda(dane)
+BoxCox.lambda(dane, method="loglik")
+
+@
+
+Ponieważ optymalne parametry, uzyskane dwiema metodami, wyszły prawie identyczne, to będziemy brać pod uwagę tylko $\lambda$ = 0 i $\lambda$ = 0.45.
+
+Następnie przekszałcamy nasze dane.
+
+<<zad121, echo = TRUE, eval = FALSE>>=
+
+dane.lambda.0 <- BoxCox(dane, lambda=0)
+dane.lambda.opt_log <- BoxCox(dane, lambda=BoxCox.lambda(dane, method="loglik"))
+
+@
+
+Sporządzamy wykresy dopasowania dekompozycji addytywnej przez zastosowaniem transformacji Boxa-Coxa i po.
+
+<<zad122, echo = FALSE, eval = TRUE, fig.cap = "Wykres dopasowania dekompozycji addytywnej przed i po transformacji Boxa-Coxa", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+dekomp.add.lambda.0 <- decompose(dane.lambda.0)
+dekomp.add.lambda.opt_log <- decompose(dane.lambda.opt_log)
+
+fit.dekomp.add.lambda.0 <- dekomp.add.lambda.0$trend + dekomp.add.lambda.0$seasonal
+fit.dekomp.add.lambda.opt_log <- dekomp.add.lambda.opt_log$trend + dekomp.add.lambda.opt_log$seasonal
+
+fit.dekomp.add.lambda.0 <- InvBoxCox(fit.dekomp.add.lambda.0, lambda=0)
+fit.dekomp.add.lambda.opt_log <- InvBoxCox(fit.dekomp.add.lambda.opt_log, lambda=BoxCox.lambda(dane, method="loglik"))
+
+autoplot(cbind(dane,
+               fit.dekomp.add,
+               fit.dekomp.add.lambda.0,
+               fit.dekomp.add.lambda.opt_log),
+        lwd=0.7, ylab="",
+        main="Dekompozycja addytywna z i bez transformacji Boxa-Coxa")
+
+@
+
+Transformacja Boxa-Coxa poprawiła dopasowanie względem dekompozycji addytywnej. Najlepsze dopasowanie wykazał parametr $\lambda$ = 0.45, otrzymany za pomoca funkcji \textit{BoxCox.lambda()}.
+
+Zajmiemy się teraz porównaniem dopasowania dekompozycji multiplikatywna i dekompozycji addytywnej po transformacji Boxa-Coxa.
+
+<<zad123, echo = FALSE, eval = TRUE, fig.cap = "Wykres porównania dopasowania dekompozycji multiplikatywnej i dekompozycji addytywnej po transformacji Boxa-Coxa", fig.width=7, fig.height=4, results='asis', warning = FALSE>>=
+
+autoplot(cbind(fit.dekomp.mul, fit.dekomp.add.lambda.opt_log))
+
+@
+
+Widać, że dekompozycja addytywna po transformacji daje praktycznie takie same rezultaty jak dekompozycja multiplikatywna. co sugeruje, że dana transformacja poprawiła jakość dopasowania w przypadku dekompozycji addytywnej.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{Dekompozycja na podstawie modelu regresji}
+
+Sporządzamy wykresy dopasowania dekompozycji na podstawie modelu regresji dla pięciu modeli przed zastosowaniem transformacji Boxa-Coxa i po.
+
+<<zad124, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+model1.lambda.0 <- tslm(dane ~ trend, lambda=0)
+model1.lambda.opt_log <- tslm(dane ~ trend, lambda=0.45)
+
+model2.lambda.0 <- tslm(dane ~ trend+season, lambda=0)
+model2.lambda.opt_log <- tslm(dane ~ trend+season, lambda=0.45)
+
+model3.lambda.0 <- tslm(dane ~ trend+season+I(trend^2), lambda=0)
+model3.lambda.opt_log <- tslm(dane ~ trend+season+I(trend^2), lambda=0.45)
+
+model4.lambda.0 <- tslm(dane ~ season + poly(trend, raw = FALSE, degree = 3), lambda=0)
+model4.lambda.opt_log <- tslm(dane ~ season + poly(trend, raw = FALSE, degree = 3), lambda=0.45)
+
+model5.lambda.0 <- tslm(dane ~ season + poly(trend, raw = FALSE, degree = 4), lambda=0)
+model5.lambda.opt_log <- tslm(dane ~ season + poly(trend, raw = FALSE, degree = 4), lambda=0.45)
+
+fit.model1.lambda.0 <- fitted(model1.lambda.0)
+fit.model2.lambda.0 <- fitted(model2.lambda.0)
+fit.model3.lambda.0 <- fitted(model3.lambda.0)
+fit.model4.lambda.0 <- fitted(model4.lambda.0)
+fit.model5.lambda.0 <- fitted(model5.lambda.0)
+
+fit.model1.lambda.opt_log <- fitted(model1.lambda.opt_log)
+fit.model2.lambda.opt_log <- fitted(model2.lambda.opt_log)
+fit.model3.lambda.opt_log <- fitted(model3.lambda.opt_log)
+fit.model4.lambda.opt_log <- fitted(model4.lambda.opt_log)
+fit.model5.lambda.opt_log <- fitted(model5.lambda.opt_log)
+
+@
+
+<<zad125, echo = FALSE, eval = TRUE, fig.cap = "Wykres porównania dopasowania modelu 1 dekompozycji na podstawie modelu regresji przed i po transformacji Boxa-Coxa", fig.width=7, fig.height=4, warning = FALSE, results = "asis">>=
+
+autoplot(cbind(dane, fit.tslm.model.1, fit.model1.lambda.0, fit.model1.lambda.opt_log), lwd=0.7)
+
+@
+
+<<zad126, echo = FALSE, eval = TRUE, fig.cap = "Wykres porównania dopasowania modelu 2 dekompozycji na podstawie modelu regresji przed i po transformacji Boxa-Coxa", fig.width=7, fig.height=4, warning = FALSE, results = "asis">>=
+
+autoplot(cbind(dane, fit.tslm.model.2, fit.model2.lambda.0, fit.model2.lambda.opt_log), lwd=0.7)
+
+@
+
+<<zad127, echo = FALSE, eval = TRUE, fig.cap = "Wykres porównania dopasowania modelu 3 dekompozycji na podstawie modelu regresji przed i po transformacji Boxa-Coxa", fig.width=7, fig.height=4, warning = FALSE, results = "asis">>=
+autoplot(cbind(dane, fit.tslm.model.3, fit.model3.lambda.0, fit.model3.lambda.opt_log), lwd=0.7)
+
+@
+
+<<zad128, echo = FALSE, eval = TRUE, fig.cap = "Wykres porównania dopasowania modelu 4 dekompozycji na podstawie modelu regresji przed i po transformacji Boxa-Coxa", fig.width=7, fig.height=4, warning = FALSE, results = "asis">>=
+autoplot(cbind(dane, fit.tslm.model.4, fit.model4.lambda.0, fit.model4.lambda.opt_log), lwd=0.7)
+
+@
+
+<<zad129, echo = FALSE, eval = TRUE, fig.cap = "Wykres porównania dopasowania modelu 5 dekompozycji na podstawie modelu regresji przed i po transformacji Boxa-Coxa", fig.width=7, fig.height=4, warning = FALSE, results = "asis">>=
+autoplot(cbind(dane, fit.tslm.model.5, fit.model5.lambda.0, fit.model5.lambda.opt_log), lwd=0.7)
+
+@
+
+Dla modelu 1:  dopasowanie jest porównywalnie złe, brak uwzględnienia sezonowości w modelu regresji jest mocno widoczny we wszysktich trzech przypadkach.
+
+Dla modeli 2-5: transformacja Boxa-Coxa nie wpływa istotnie na jakość dopasowania.
+
+Wyznaczymy szczegółowe informacje dotyczące modeli po transformacji, takie jak współczynniki regresji, wartości t-statystyki, $R^2$ za pomocą funkcji \textit{summary}.
+
+\begin{itemize}
+
+\item Model 1
+
+Dla $\lambda$ = 0.
+
+<<pomocy_model1, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model1.lambda.0)$r.squared
+
+@
+
+Dla $\lambda$ = 0.45.
+
+<<pomocy_model1111111111, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model1.lambda.opt_log)$r.squared
+
+@
+
+Wnioski: nie możemy oceniac ulepszenia jakości dopasowania dla tego modelu ze względu braku uwzględnienia sezonowości.
+
+\item Model 2
+
+Dla $\lambda$ = 0.
+
+<<pomocy_model2, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model2.lambda.0)$r.squared
+
+@
+
+Dla $\lambda$ = 0.45.
+
+<<pomocy_model22222222222, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model2.lambda.opt_log)$r.squared
+
+@
+
+\item Model 3
+
+Dla $\lambda$ = 0.
+
+<<pomocy_model3, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model3.lambda.0)$r.squared
+
+@
+
+Dla $\lambda$ = 0.45.
+
+<<pomocy_model3333333333, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model3.lambda.opt_log)$r.squared
+
+@
+
+\item Model 4
+
+Dla $\lambda$ = 0. 
+
+<<pomocy_model4, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model4.lambda.0)$r.squared
+
+@
+
+Dla $\lambda$ = 0.45.
+
+<<pomocy_model4444444444, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model4.lambda.opt_log)$r.squared
+
+@
+
+\item Model 5
+
+Dla $\lambda$ = 0.
+
+<<pomocy_model5, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model5.lambda.0)$r.squared
+
+@
+
+Dla $\lambda$ = 0.45.
+
+<<pomocy_model555555, echo = FALSE, eval = TRUE, results='asis', warning = FALSE>>=
+
+summary(model5.lambda.opt_log)$r.squared
+
+@
+
+\end{itemize}
+
+Wnioski dla modeli 2-5: Wartość $R^2$ jest wyższa dla $\lambda$ = 0.45, ale wszystkie wartości (dla modelu przed transformacją i dla $\lambda$ = 0) są bardzo zbliżone do siebie.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{Dekompozycja STL oparta na metodzie loess}
+
+Sporządzamy wykresy dopasowania dekompozycji STL oparta na metodzie loess dla czterych modeli przed zastosowaniem transformacji Boxa-Coxa i po.
+
+<<przygotowania, echo = FALSE, eval = TRUE>>=
+
+stl.1.lambda.0 <- stl(dane.lambda.0, s.window='periodic')
+stl.2.lambda.0 <- stl(dane.lambda.0, s.window=7)
+stl.3.lambda.0 <- stl(dane.lambda.0, s.window=13)
+stl.4.lambda.0 <- stl(dane.lambda.0, s.window=13, t.window=7)
+
+
+stl.1.lambda.0.45 <- stl(dane.lambda.opt_log, s.window='periodic')
+stl.2.lambda.0.45 <- stl(dane.lambda.opt_log, s.window=7)
+stl.3.lambda.0.45 <- stl(dane.lambda.opt_log, s.window=13)
+stl.4.lambda.0.45 <- stl(dane.lambda.opt_log, s.window=13, t.window=7)
+
+fit.stl.1.lambda.0 <- trendcycle(stl.1.lambda.0) + seasonal(stl.1.lambda.0)
+fit.stl.2.lambda.0 <- trendcycle(stl.2.lambda.0) + seasonal(stl.2.lambda.0)
+fit.stl.3.lambda.0 <- trendcycle(stl.3.lambda.0) + seasonal(stl.3.lambda.0)
+fit.stl.4.lambda.0 <- trendcycle(stl.4.lambda.0) + seasonal(stl.4.lambda.0)
+
+fit.stl.1.lambda.0.45 <- trendcycle(stl.1.lambda.0.45) + seasonal(stl.1.lambda.0.45)
+fit.stl.2.lambda.0.45 <- trendcycle(stl.2.lambda.0.45) + seasonal(stl.2.lambda.0.45)
+fit.stl.3.lambda.0.45 <- trendcycle(stl.3.lambda.0.45) + seasonal(stl.3.lambda.0.45)
+fit.stl.4.lambda.0.45 <- trendcycle(stl.4.lambda.0.45) + seasonal(stl.4.lambda.0.45)
+
+fit.stl.1.lambda.0 <- InvBoxCox(fit.stl.1.lambda.0,lambda=0)
+fit.stl.2.lambda.0 <- InvBoxCox(fit.stl.2.lambda.0,lambda=0)
+fit.stl.3.lambda.0 <- InvBoxCox(fit.stl.3.lambda.0,lambda=0)
+fit.stl.4.lambda.0 <- InvBoxCox(fit.stl.4.lambda.0,lambda=0)
+
+fit.stl.1.lambda.0.45 <- InvBoxCox(fit.stl.1.lambda.0.45,lambda=0.45)
+fit.stl.2.lambda.0.45 <- InvBoxCox(fit.stl.2.lambda.0.45,lambda=0.45)
+fit.stl.3.lambda.0.45 <- InvBoxCox(fit.stl.3.lambda.0.45,lambda=0.45)
+fit.stl.4.lambda.0.45 <- InvBoxCox(fit.stl.4.lambda.0.45,lambda=0.45)
+
+@
+
+<<rarara1, echo = FALSE, eval = TRUE, fig.cap = "Wykresy porównania dopasowania modeli dekompozycji STL oparta na metodzie loess przed i po transformacji Boxa-Coxa", fig.width=7, fig.height=4, warning = FALSE, results = "asis">>=
+
+autoplot(cbind(dane,
+               fit.stl_1,
+               fit.stl.1.lambda.0, fit.stl.1.lambda.0.45),
+         lwd=0.7, ylab="",
+         main="Dekompozycja STL (stl.1: s.window = periodic, t.window = domyslne)
+z i bez transformacji Boxa-Coxa dla lambda=0 i lambda=0.45")
+
+autoplot(cbind(dane,
+               fit.stl_2,
+               fit.stl.2.lambda.0, fit.stl.1.lambda.0.45),
+         lwd=0.7, ylab="",
+         main="Dekompozycja STL (stl.2: s.window = 7, t.window = domyslne)
+z i bez transformacji Boxa-Coxa dla lambda=0 i lambda=0.45")
+
+autoplot(cbind(dane,
+               fit.stl_3,
+               fit.stl.3.lambda.0, fit.stl.3.lambda.0.45),
+         lwd=0.7, ylab="",
+         main="Dekompozycja STL (stl.3: s.window = 13, t.window = domyslne)
+z i bez transformacji Boxa-Coxa dla lambda=0 i  lambda=0.45")
+
+autoplot(cbind(dane,
+               fit.stl_4,
+                 fit.stl.4.lambda.0, fit.stl.4.lambda.0.45),
+         lwd=0.7, ylab="",
+         main="Dekompozycja STL (stl.4: s.window = 13, t.window = 7)
+z i bez transformacji Boxa-Coxa dla lambda=0 i lambda=0.45")
+
+@
+
+Transformacja Boxa-Coxa z parametrem $\lambda$=0 poprawiła dopasowanie we wszystkich czterych modelach w przypadku metody dekompozycji STL.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Porównanie wyników eliminacji trendu i sezonowosci}
+
+W tym podpunkcie porównamy wyniki eliminacji trendu i sezonowosci na podstawie rozwazanych metod dekompozycji z wynikami uzyskanymi poprzez odpowiednie róznicowanie danych.
+
+<<danedanedane, echo = FALSE, eval = TRUE>>=
+
+dane.diff.1 <- diff(dane, lag=1)
+
+# Różnicowanie otrzymanych danych [dane.diff.1.12] 
+# za pomocą diff() dla lag=12
+dane.diff.1.12 <- diff(dane.diff.1, lag=12)
+
+@
+
+Na poniższym rysunku przedstawiono wykres otrzymanych reszt z różnicowań.
+
+<<LALALALALALAL, echo = FALSE, eval = TRUE, fig.cap = "Analiza otrzymanego szeregu reszt z różnicowań", fig.width=7, fig.height=4, warning = FALSE, results = "asis">>=
+
+ggtsdisplay(dane.diff.1.12)
+
+@
+
+W otrzymanym szeregu reszt nie widać trendu i sezonowości, co również potwierdza to też wykres ACF. Szereg reszt ma więc stacjonarny charakter.
+
+Na poniższym rysunku przedstawiono wykres otrzymanych reszt z dekompozycji multiplikatywnej.
+
+<<REREREgffDRFGH, echo = FALSE, eval = TRUE, fig.cap = "Analiza wykresu reszt z dekompozycji multiplikatywnej", fig.width=7, fig.height=4, warning = FALSE, results = "asis">>=
+
+ggtsdisplay(dekomp.mul.reszty)
+
+@
+
+Nie widać pozostałości seoznoWości na wykresie reszt, co również wykres ACF. Szereg reszt w tym przypadku jest stacjonarny.
+
+Na poniższym rysunku przedstawiono wykres otrzymanych reszt z dekompozycji addytywnej po transformacji Boxa-Coxa.
+
+<<REREfdfdREDRFGH3456, echo = FALSE, eval = TRUE, fig.cap = "Analiza wykresu reszt z dekompozycji addytywnej po transformacji Boxa-Coxa", fig.width=7, fig.height=4, warning = FALSE, results = "asis">>=
+
+ggtsdisplay(dekomp.add.lambda.opt_log$random)
+
+@
+
+Podobnie jak dla dekompozycji multiplikatywnej.
+
+Na poniższym rysunku przedstawiono wykres otrzymanych reszt z dekompozycji z dekompozycji opartej o model regresji + Boxa-Coxa.
+
+<<REREREDdfhgRFGH3445656, echo = FALSE, eval = TRUE, fig.cap = "Analiza wykresu reszt z dekompozycji opartej o model regresji + Boxa-Coxa", fig.width=7, fig.height=4, warning = FALSE, results = "asis">>=
+
+ggtsdisplay(residuals(model4.lambda.opt_log))
+
+@
+
+Nie widać pozostałości po trendzie i sezonowości w szeregu reszt. Zatem szereg ma charakter stacjonarny.
+
+Na poniższym rysunku przedstawiono wykres otrzymanych reszt z dekompozycji z dekompozycji STL + Boxa-Coxa.
+
+<<REREREDRFsdfgGH3445656, echo = FALSE, eval = TRUE, fig.cap = "Analiza wykresu reszt z dekompozycji STL + Boxa-Coxa", fig.width=7, fig.height=4, warning = FALSE, results = "asis">>=
+
+ggtsdisplay(remainder(stl.4.lambda.0))
+
+@
+
+Widać pozostałości po sezonowości np. na wykresie ACF. Szereg reszt nie jest więc stacjonarny.
+
+\section{Zadanie 3 - Zastosowanie wskaźników analizy technicznej w analizie szeregów czasowych}
+
+
+\subsection{Opis wskaźników}
+
+Poniżej przedstawiamy opis kluczowych wskaźników analizy technicznej, zastosowanych do badania dynamicznych szeregów czasowych notowań akcji na giełdzie. Opiszemy wskaźniki takie jak: MACD, STS/SMI, Wstęga Bollingera, RSI, SMA.
+
+\subsubsection{MACD}
+
+MACD (Średnia Koniunkcyjna Ruchoma) - wskaźnik ten bada zbieżności i rozbieżności średnich ruchomych, koncentrując się na różnicy między wartościami długoterminowej i krótkoterminowej średniej wykładniczej cen zamknięcia.
+
+\begin{itemize}
+
+\item \textbf{Budowa}
+
+- Szybsza Linia (MACD) - różnica między dwiema wykładniczymi średnimi kroczącymi cen zamknięcia, zazwyczaj o okresach 12 i 26 dni lub tygodni.\\
+- Wolniejsza Linia (Sygnał): 9-okresowa średnia wykładnicza linii MACD.
+
+\item \textbf{Interpretacja}
+
+- Sygnały kupna i sprzedaży pojawiają się przy przecięciach linii MACD i sygnału:\\
+  Przecięcie od dołu to sygnał kupna.\\
+  Przecięcie od góry to sygnał sprzedaży.\\
+- Stan wykupienia rynku jest określany, gdy linie są zbyt wysoko ponad linią zero, a stan wyprzedania, gdy spadają zbyt daleko poniżej.\\
+- Negatywna dywergencja występuje, gdy linie MACD są powyżej zera, słabną, a ceny nadal rosną, co może sygnalizować zbliżający się szczyt cenowy.\\
+- Pozytywna dywergencja występuje, gdy linie MACD są poniżej zera, rosną, a ceny są jeszcze niskie, co może sugerować zbliżające się dno cenowe.
+
+\end{itemize}
+
+\subsubsection{STS}
+
+STS  (Stochastyczny Oscylator) - jest wskaźnikiem opartym na obserwacji, że w trendach wzrostowych ceny zamknięcia zbliżają się do górnej granicy zakresu wahań, a w trendach spadkowych zbliżają się do dolnej granicy tego zakresu.
+
+\begin{itemize}
+
+\item \textbf{Budowa}
+
+- Wykorzystuje dwie linie: \%K (linia szybsza) i \%D (linia wolniejsza).\\
+- Linia \%K mierzy w procentach relację ostatniej ceny zamknięcia do zakresu wahań cen w okresie, zazwyczaj przy użyciu 5-dniowego okresu.\\
+- \%D to 3-okresowa średnia ruchoma z \%K
+
+\item \textbf{Interpretacja}
+
+- Stochastyczny Oscylator oscyluje między 0 a 100, gdzie wartości powyżej 80 oznaczają wykupienie rynku, a wartości poniżej 20 oznaczają wyprzedanie.\\
+- Sygnałami kupna i sprzedaży są przecięcia linii \%K i \%D.\\
+- Wartości skrajne wyznaczone są poziomami 80 i 20.\\
+- Negatywna dywergencja występuje, gdy linia \%D jest powyżej 80, a ceny nadal rosną, co może sugerować możliwość odwrócenia trendu wzrostowego.\\
+- Pozytywna dywergencja występuje, gdy linia \%D jest poniżej 20, a ceny nadal spadają, co może sugerować możliwość odwrócenia trendu spadkowego.
+
+\end{itemize}
+
+\subsubsection{SMI}
+
+SMI (Stochastic Momentum Index) - jest to wskaźnik stworzony na bazie Stochastycznego Oscylatora (STS), który pomaga identyfikować moment zmiany kierunku trendu na rynku finansowym.
+
+\begin{itemize}
+
+\item \textbf{Budowa}
+
+- Wykorzystuje dwie linie: \%K (linia szybsza) i \%D (linia wolniejsza), podobnie jak STS.\\
+- Linia \%K mierzy w procentach relację różnicy między ostatnią ceną zamknięcia a najniższą ceną w określonym okresie a różnicą między najwyższą a najniższą ceną.\\
+- \%D to 3-okresowa średnia ruchoma z \%K.\\
+- Dodatkowo, SMI zawiera linię sygnałową, która jest 3-okresową średnią z \%D.
+\item \textbf{Interpretacja}
+
+- Stochastic Momentum Index oscyluje między -100 a +100, a poziomy powyżej +40 i poniżej -40 są uznawane za obszary wykupienia i wyprzedania.\\
+- Sygnałami kupna i sprzedaży są przecięcia linii \%K i \%D, podobnie jak w przypadku STS.\\
+- SMI jest bardziej gładki niż STS, co może pomagać w identyfikacji trendów.\\
+- Pozytywna dywergencja występuje, gdy linia SMI rośnie, ale cena jest na niższym poziomie, co może sugerować możliwość odwrócenia trendu wzrostowego.\\
+- Negatywna dywergencja występuje, gdy linia SMI spada, ale cena rośnie, co może sugerować możliwość odwrócenia trendu spadkowego.
+\end{itemize}
+
+
+\subsubsection{Wstęga Bollingera}
+
+Ta metoda opiera się na umieszczeniu dwóch wstęg wokół średniej, oddalonych o dwa odchylenia standardowe, zwykle 20-dniowe. Odchylenie standardowe jest używane do statystycznego przedstawienia rozproszenia cen wokół wartości średniej. 
+
+\begin{itemize}
+
+\item \textbf{Budowa}
+
+- Wstęgi Bollingera składają się z trzech elementów: średniej kroczącej (zazwyczaj 20-okresowej) oraz dwóch wstęg oddalonych o dwa odchylenia standardowe od tej średniej.\\
+- Górna wstęga często działa jako linia oporu, a dolna wstęga jako linia wsparcia.
+
+
+\item \textbf{Interpretacja}
+
+- Wstęgi Bollingera mogą być traktowane jako docelowe poziomy cenowe.\\
+- Jeśli ceny odbiją się od dolnej wstęgi i przetną średnią 20-dniową, górna wstęga staje się poziomem docelowym.\\
+- Po spadku cen poniżej średniej 20-dniowej, dolna wstęga staje się poziomem docelowym.\\
+- Szerokość wstęgi mierzy zmienność cen w okresie ostatnich 20 dni.\\
+- Wzrost zmienności powoduje rozszerzenie się wstęg, a spadek zmienności skutkuje ich zwężeniem.\\
+- Duże rozszerzenie wstęg może wskazywać na możliwy koniec trendu, podczas gdy ich zbyt duże zwężenie może sygnalizować początek nowego trendu.
+
+\end{itemize}
+
+
+\subsubsection{RSI}
+
+To wskaźnik, który mierzy siłę i tempo zmian cen na rynku. RSI opiera się na stosunku średnich wartości wzrostu do średnich wartości spadku.
+
+
+\begin{itemize}
+
+\item \textbf{Budowa}
+
+- Standardowe ustawienie tego wskaźnika wynosi 14 okresów.\\
+- RSI umieszczany jest na skali od 0 do 100.
+
+
+\item \textbf{Interpretacja}
+
+- Wartości powyżej 70 sygnalizują wykupienie rynku, a wartości poniżej 30 oznaczają wyprzedanie.\\
+- Dywergencje pomiędzy RSI a ceną stanowią ważne ostrzeżenia.
+
+
+\end{itemize}
+
+\subsubsection{SMA}
+
+To wskaźnik oparty na wygładzaniu danych cenowych. Oblicza się je, dodając wartości cen zamknięcia z określonego okresu i dzieląc przez liczbę tych dni.
+
+\begin{itemize}
+  \item \textbf{Budowa}
+- Standardowe ustawienie tego wskaźnika wynosi 14 okresów.\\
+- Wzór obliczeniowy: $SMA = \frac{Cena_1 + Cena_2 + \ldots + Cena_n}{n}$, gdzie $Cena_i$ to cena zamknięcia dla i-tego dnia, a $n$ to liczba dni.
+  
+  \item \textbf{Interpretacja}
+
+- SMA może działać jako obszar wsparcia, gdy cena jest powyżej, lub oporu, gdy jest poniżej. Przecięcie ceny z SMA może dostarczyć sygnałów dotyczących zmiany trendu.\\
+- Kiedy cena jest powyżej SMA, sugeruje to trend wzrostowy, a kiedy poniżej, trend spadkowy.\\
+- Przecięcia krótszego okresu SMA z dłuższym mogą generować sygnały kupna lub sprzedaży.
+
+\end{itemize}
+
+\subsection{Wizualizacja wybranych wskaźników}
+
+Aby przeprowadzić analizę i zwizualizować powyżej opisane wskaźniki na bieżących danych giełdowych, zainstalujemy pakiet \textit{quantmod}. Ten pakiet umożliwia korzystanie z funkcji \textit{getSymbols}, która została użyta do pobrania danych dotyczących spółki Microsoft od początku do końca 2022 roku z platformy Yahoo Finance. 
+
+<<zad3_dane, eval = T, echo = T, warning = F >>=
+
+# Pobieranie notowań [MSFT.raw] z yahoo za pomocą getSymbols z pakietu quantmod
+MSFT.raw <- getSymbols(Symbols="MSFT", src="yahoo", auto.assign=FALSE)
+
+# Wybór podzbioru danych z roku 2022 
+msft <- MSFT.raw["2022-01-01::2023-01-01"]
+
+@
+
+W tabeli poniżej \ref{zad3:tab1} wyświetlamy fragment danych \textit{msft}.
+
+<<zad3_tab, eval = T, echo = F, results='asis', warning = F >>=
+
+d1 <- data.frame(head(msft))
+d1$MSFT.Volume <- as.integer(d1$MSFT.Volume)
+colnames(d1) <- c("Open", "High", "Low", "Close", "Volume", "Adjusted")
+tab1 <- xtable(d1, digits = 3, row.names = TRUE, caption = "Fragment danych spółki Microsoft dla roku 2022", label = "zad3:tab1")
+print(tab1, type = "latex", table.placement = "H", comment = FALSE, include.colnames = T, include.rownames = T, caption.placement = "top")
+colnames(msft) <- c("Open", "High", "Low", "Close", "Volume", "Adjusted")
+@
+
+Dla każdej sesji dostępne są następujące informacje:
+
+\begin{itemize}
+
+\item Date - określa datę danej sesji giełdowej.
+
+\item Open - reprezentuje cenę otwarcia akcji na początku sesji giełdowej, czyli pierwszą notowaną cenę danego dnia.
+
+\item High - przedstawia najwyższą cenę akcji osiągniętą w trakcie danej sesji.
+\item Low - odnosi się do najniższej ceny akcji osiągniętej w trakcie danej sesji.
+\item Close - określa cenę zamknięcia akcji na koniec sesji giełdowej, czyli ostatnią notowaną cenę danego dnia.
+\item Volume - przedstawia liczbę akcji spółki Microsoft, które zostały wymienione w trakcie danej sesji.
+\item Adjusted - zawiera cenę zamknięcia akcji, która została dostosowana o różne korekty, takie jak dywidendy czy podziały akcji. Cena ta lepiej odzwierciedla rzeczywistą wartość inwestycji.
+
+\end{itemize}
+
+Podczas analizy danych spółki Microsoft skupiamy się głównie na cenie zamknięcia. Ta wartość stanowi kluczowy punkt odniesienia do wyznaczania wskaźników technicznych, takich jak MACD, STS/SMI, Wstęga Bollingera, RSI i SMA. Poniżej na rysunku \ref{fig:zad3_1} przedstawiamy wykres cen zamknięcia. 
+
+<<zad3_1, eval = T, echo = F, results='asis', fig.cap = "Wykres cen zamknięcia dla spółki Mircosoft w okresie 1.01.2022-1.01.2023 " , fig.height=6, fig.width=8>>=
+
+
+# Cena zamknięcia pkn$Close jako [cena]
+cena <- msft$Close
+
+# Wykres cen zamknięcia [cena] za pomocą plot()
+plot(cena,
+     main="Cena zamkniecia dla spolki Mircosoft w okresie 1.01.2022-1.01.2023",
+     xlab="Data",
+     ylab="Cena zamkniecia",
+     grid.ticks.lty = 2,main.timespan = FALSE, yaxis.right=FALSE)
+
+@
+
+\textbf{Wnioski:}\\
+Na analizowanym wykresie \ref{fig:zad3_1} cen zamknięcia spółki Microsoft (MSFT) w okresie od 1.01.2022 do 1.01.2023 można zauważyć wyraźny trend malejący. Jest to widoczne poprzez regularne spadki cen, co sugeruje, że w analizowanym okresie presja sprzedających przeważała nad popytem. 
+
+\subsubsection{MACD}
+
+Analiza wskaźnika \textit{MACD} na danych dotyczących ceny zamknięcia spółki Microsoft w roku 2022:\\
+Ustawiamy parametry wskaźnika, definiując:\\
+- okresy dla linii szybkiej (12), \\
+- linii wolnej (26)\\
+- linii sygnałowej (9). 
+
+
+<<zad3_MACD, eval = T, echo = F, results='asis', fig.cap = "Wykres wskaźnika MACD - rok 2022 ", fig.height=6, fig.width=8 >>=
+
+# Wskaźnik MACD
+
+macd <- MACD(cena, nFast = 12, nSlow = 26, nSig = 9)
+
+macdLine <- macd$macd
+signalLine <- macd$signal
+histogram <- macdLine - signalLine
+
+# Tworzenie wektora dat z indeksu
+dates <- index(cena)
+# Tworzenie wykresu MACD z punktami przecięcia
+plot(index(cena), macdLine, type = "l", col = "lightblue", xlab = "Data", ylab = "Wartosc", main = "Wskaznik MACD")
+lines(index(cena), signalLine, col = "slateblue4", lty = 2)
+
+# Dodanie histogramu
+for (i in seq_along(histogram)) {
+  if (!is.na(histogram[i])) {
+    if (histogram[i] >= 0) {
+      segments(index(cena)[i], 0, index(cena)[i], histogram[i], col = "blue")
+    } else {
+      segments(index(cena)[i], 0, index(cena)[i], histogram[i], col = "orchid")
+    }
+  }
+}
+
+# Dodanie siatki
+grid(col = "gray", lty = "dotted")
+
+# Dodanie legendy
+legend("topright", legend = c("MACD Line", "Signal Line"), 
+       col = c("lightblue", "slateblue4"), lty = c(1, 2))
+
+
+@
+
+\textbf{Wnioski:}\\
+Na podstawie analizy wykresu \ref{fig:zad3_MACD} możemy sformułować następujące wnioski:
+
+\begin{itemize}
+
+\item Pierwsze krzyżowanie, gdzie linia MACD przecina linię sygnałową z dołu, miało miejsce na początku marca, sugerując potencjalny sygnał kupna. Późniejsze krzyżowania i zmiany układu linii sygnalizowały dynamiczne zmiany w trendzie rynkowym.
+
+\item Pozytywne wartości histogramu wskazywały na okresy, gdy linia MACD była powyżej linii sygnałowej, co korelowało z okresami wzrostu cen. Ujemne wartości histogramu występowały podczas spadkowych okresów cen.
+
+\item Szczególnie istotne momenty zwiększonej odległości między liniami takie jak np. w marcu świadczą o silnych trendach rynkowych.
+
+\item Dłuższe okresy przewagi linii MACD nad sygnałową, zauważone zwłaszcza od połowy sierpnia do końca października, wskazywały na dominację trendu wzrostowego. Potwierdzeniem tego okresu dominacji było także osiągnięcie najwyższych wartości MACD i sygnału, prawie 3 dla MACD i około 2.5 dla sygnału w połowie sierpnia. Natomiast przewaga linii sygnałowej nad MACD była widoczna zwłaszcza w okresie od listopada do końca grudnia. W tym czasie wartości MACD pozostawały poniżej wartości sygnałowej, co sygnalizowało trend spadkowy na rynku. Najdłuższą przewagę sygnałowej nad MACD odnotowano w pierwszej połowie listopada.
+
+\item Zmiany kierunku histogramu potwierdzają zmiany w trendzie, na przykład, gdy przechodził z dodatnich na ujemne wartości.
+
+\end{itemize}
+
+
+\subsubsection{SMI}
+
+Analiza wskaźnika \textit{SMI} na danych dotyczących ceny zamknięcia spółki Microsoft w roku 2022:\\
+Ustawiamy parametry wskaźnika, definiując:\\
+- liczbę okresów (13) \\
+- liczbę okresów używanych do obliczenia linii \%K (2)\\
+- liczbę okresów używanych do obliczenia linii \%D (25)\\
+- liczbę okresów używanych do obliczenia linii sygnałowej (9).
+
+<<zad3_SMI_2, eval = T, echo = F, results='asis', fig.cap = "Wykres dla wskaźnika SMI - rok 2022", fig.height=6, fig.width=8 >>=
+
+
+# Wskaźnik SMI
+smi <- SMI(cena, n = 13, nFast = 2, nSlow = 25, nSig = 9)
+
+dates <- index(cena)
+
+# Tworzenie wykresu SMI
+plot(dates, smi$SMI, type = "l", col = "blue", xlab = "Data", ylab = "SMI", main = "Wskaznik SMI")
+lines(dates, smi$signal, col = "plum", lty = 2)
+
+# Dodanie siatki
+grid(col = "gray", lty = "dotted")
+
+abline(h = 40, col = "red")
+abline(h = -40, col = "lightgreen")
+# Dodanie legendy
+legend("topright", legend = c("SMI", "Signal", "Obszary wykupienia", "Obszary wyprzedania"), col = c("blue", "plum", "red", "lightgreen"), lty = c(1, 1))
+
+
+
+
+@
+
+\textbf{Wnioski:}\\
+Na podstawie analizy wykresu \ref{fig:zad3_SMI_2} możemy sformułować następujące wnioski:
+
+\begin{itemize}
+
+\item Wartości SMI powyżej +40, zwłaszcza w kwietniu i sierpniu, sugerują obszary potencjalnego wykupienia (przesunięcie w stronę wzrostową). Wartości SMI poniżej -40, szczególnie od końca lutego do marca, od końca kwietnia do połowy czerwca i od września do listopada, wskazują obszary potencjalnego wyprzedania (przesunięcie w stronę spadkową).
+
+\item Przecięcia linii SMI i sygnałowej nad obszarami wykupienia mogą sugerować potencjalne sygnały sprzedaży, zwłaszcza w kwietniu i sierpniu. Przecięcia linii SMI i sygnałowej pod obszarami wyprzedania mogą sugerować potencjalne sygnały kupna, zwłaszcza od kwietnia do maja i od września do pażdziernika.
+
+
+\item Wartości SMI poniżej -60, zwłaszcza w okresie października, sugerują obszary potencjalnie silnego wyprzedania na rynku. Warto zwrócić uwagę na okres od października do listopada, gdzie obie linie SMI i sygnałowa są poniżej -60, co może sygnalizować okres trwałego trendu spadkowego.
+
+\end{itemize}
+
+
+
+
+\subsubsection{Wstęga Bollingera}
+
+Analiza wskaźnika \textit{Wstęga Bollingera} na danych dotyczących ceny zamknięcia spółki Microsoft w roku 2022:\\
+Ustawiamy parametry wskaźnika, definiując:\\
+- okres dla średniej kroczącej (20).\\
+- współczynnik mnożenia odchylenia standardowego (2).
+
+<<zad3_WB, eval = T, echo = F, include = F>>=
+
+# Wskaźnik Wstęgi Bollingera
+n <- 20  # okres dla średniej kroczącej
+k <- 2   # współczynnik mnożenia odchylenia standardowego
+
+# Obliczenie średniej kroczącej
+sma <- SMA(cena, n = n)
+
+# Obliczenie odchylenia standardowego
+sd <- k * rollapply(cena, n, sd, fill = NA, align = "right")
+
+# Wstęga górna
+upper <- sma + sd
+
+# Wstęga dolna
+lower <- sma - sd
+
+# Tworzenie wektora dat z indeksu
+dates <- index(cena)
+
+@
+
+<<zad3_WB_2, eval = T, echo = F, results='asis', fig.cap = "Wykres dla wskaźnika Wstęga Bollingera - rok 2022", fig.height=6, fig.width=8 >>=
+
+# Tworzenie wykresu Wstęgi Bollingera
+plot(dates, cena, type = "l", col = "black", xlab = "Data", ylab = "Cena zamkniecia", main = "Wstega Bollingera")
+lines(dates, sma, col = "cyan", lty = 2)
+lines(dates, upper, col = "blue", lty = 2)
+lines(dates, lower, col = "palegreen4", lty = 2)
+# Dodanie siatki
+grid(col = "gray", lty = "dotted")
+# Dodanie legendy
+legend("topright", legend = c("Cena zamkniecia", "Srednia kroczaca", "Wstega gorna", "Wstega dolna"), 
+       col = c("black", "cyan", "blue", "palegreen3"), lty = c(1, 2, 2, 2))
+
+@
+
+\textbf{Wnioski:}\\
+Na podstawie analizy wykresu \ref{fig:zad3_WB_2} możemy sformułować następujące wnioski:
+
+\begin{itemize}
+
+\item Pod koniec lipca cena zamknięcia znajduje się ponad wstęgą górną, co może sugerować sygnał do sprzedaży. Jednocześnie jest znacznie ponad średnią kroczącą, co może wskazywać na silny trend wzrostowy. Na początku marca i pod koniec czerwca cena zamknięcia znajduje się poniżej wstęgi dolnej, co może sugerować istotny dołek cenowy i okazję do kupna. Jednocześnie w obu przypadkach jest znacznie poniżej średniej kroczącej, co może sygnalizować potencjalny trend spadkowy.
+
+sygnalizowało istotny dołek cenowy i okazję do kupna.
+
+\item Największa odległość między wstęgą górną a dolną występuje pod koniec czerwca oraz w okrecie od początku listopada do grudnia, co wskazuje na okres dużej zmienności cenowej. To może być interpretowane jako potencjalny okres znaczącego ruchu cenowego.
+
+\item Wyżej wymienione sytuacje, gdy cena zamknięcia jest znacznie ponad (lipiec) lub poniżej (marzec, czerwiec) wstęg Bollingera, jednocześnie z relatywnie dużym odchyleniem od średniej kroczącej, mogą potwierdzać trend rynkowy.
+
+
+\end{itemize}
+
+\subsubsection{RSI}
+
+Analiza wskaźnika \textit{RSI} na danych dotyczących ceny zamknięcia spółki Microsoft w roku 2022:\\
+Ustawiamy parametry wskaźnika, definiując:\\
+- okres (14)\\
+- poziom wykupienia (70) jest to poziom, powyżej którego \textit{RSI} sygnalizuje, że dany instrument finansowy może być przekupiony. Na wykresie jest oznaczony niebieską linią.\\
+- poziom wyprzedania (30) jest to poziom, poniżej którego \textit{RSI} sygnalizuje, że dany instrument finansowy może być przeceniony. Na wykresie jest oznaczony fioletową linią.
+
+<<zad3_RSI, eval = T, echo = F, include = F>>=
+
+# Wskaźnik impetu: RSI [RSI.14] za pomocą RSI()
+RSI.14 <- RSI(cena, n=14)
+
+# Liczba notowań [len] oraz [poziom.wykupienia] i [poziom.wyprzedania] jako xts
+len <- length(index(msft))
+poziom.wykupienia <- xts(x=rep(70, len),
+                         order.by = index(msft))
+poziom.wyprzedania <- xts(x=rep(30, len),
+                          order.by = index(msft))
+
+# Wykres [RSI.14] z zaznaczonymi poziomami: wykupienia=70 i wyprzedania=30
+plot(RSI.14,
+     main="Wskaznik RSI",
+     xlab="Data",
+     ylab="Cena zamkniecia spolka Microsoft",
+     grid.ticks.lty = 2, main.timespan = FALSE, yaxis.right=FALSE)
+lines(poziom.wykupienia, col="blue")
+
+
+
+addLegend("topright", on=1,
+          legend.names = c("Cena zamkniecia", "Poziom wykupienia", "Poziom wyprzedania"),
+          lty=c(1, 1, 1), lwd=c(1,1,1),
+          col=c("black", "blue","plum"))
+
+@
+
+<<zad3_RSI_2, eval = T, echo = F, results='asis', fig.cap = "Wykres dla wskaźnika RSI - rok 2022", fig.height=6, fig.width=8 >>=
+
+lines(poziom.wyprzedania, col="plum")
+
+@
+
+\textbf{Wnioski:}\\
+Na podstawie analizy wykresu \ref{fig:zad3_RSI_2} możemy sformułować następujące wnioski:
+
+\begin{itemize}
+
+\item W okresie od początku roku do końca stycznia oraz od połowy do końca sierpnia, wartość RSI spadła poniżej poziomu 30, co sugeruje obszar wyprzedania. Wartości RSI poniżej 30 mogą sugerować potencjalne punkty zakupu, zwłaszcza gdy cena znajduje się na niższym poziomie.
+
+\item W żadnym momencie nie zaobserwowano przekroczenia poziomu 70, co oznacza brak sygnałów sugerujących obszar wykupienia. Brak przekroczenia poziomu 70 może sygnalizować unikanie obszarów przekupienia i czekanie na ewentualne sygnały sprzedaży.
+
+\item Brak utrzymywania się \textit{RSI} w obszarze  wyprzedania i wykupienia może świadczyć o ostrożności inwestorów przed nadmiernym wyprzedaniem/przekupieniem rynku.
+
+
+\end{itemize}
+
+
+
+
+
+\subsubsection{SMA}
+
+Analiza wskaźnika \textit{SMA} na danych dotyczących ceny zamknięcia spółki Microsoft w roku 2022:\\
+Ustawiamy parametry wskaźnika, definiując:\\
+- okres krótkoterminowy (14) - granatowa linia, \\
+- okres długoterminowy (50) -  niebieska linia.
+
+
+<<zad3_SMA, eval = T, echo = F, include = F>>=
+
+# Wskaźnik trendu: SMA [SMA.50/SMA.200] za pomocą SMA()
+SMA.14 <- SMA(x=cena, n=14)
+SMA.50 <- SMA(x=cena, n=50)
+
+# Wykres ceny zamknięcia oraz SMA.50 i SMA.50 - alternatywnie dla xts:
+plot(cena,
+     main="Wskaznik SMA",
+     ylab="Cena zamkniecia",
+     grid.ticks.lty = 2, main.timespan = FALSE, yaxis.right=FALSE)
+lines(SMA(x=cena, n=14), col="lightblue", lwd=2)
+
+addLegend("topright", on=1,
+          legend.names = c("Cena zamkniecia", "SMA(14)", "SMA(50)"),
+          lty=c(1, 1, 1), lwd=c(1,2,2),
+          col=c("black", "lightblue", "blue"))
+
+@
+
+<<zad3_SMA_2, eval = T, echo = F, results='asis', fig.cap = "Wykres dla wskaźnika SMA - rok 2022", fig.height=7, fig.width=8>>=
+lines(SMA(x=cena, n=50), col='blue', lwd=2)
+@
+
+
+
+
+\textbf{Wnioski:}\\
+Na podstawie analizy wykresu \ref{fig:zad3_SMA_2} możemy sformułować następujące wnioski:
+
+\begin{itemize}
+
+\item Na wykresie obserwujemy przecięcie krótkoterminowej i długoterminowej SMA  pod koniec kwietnia, co może sugerować potencjalny sygnał sprzedaży. Sytuacja powtarza się na początku sierpnia.
+
+\item Pod koniec lipca obserwujemy przecięcie krótkoterminowej SMA i długoterminowej SMA (krótkoterminowa jest nad długoterminową), co mogło być sygnałem kupna. 
+
+\item Wzorce przecięć średnich kroczących sugerują dominację trendu spadkowego w analizowanym okresie. Inwestorzy mogą interpretować to jako potencjalny sygnał, że istnieje presja sprzedaży na rynku
+
+\end{itemize}
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%PRZY POMOCY FUNKCJI chartSeries (wychodzi to samo)
+% 
+% <<zad3_MACD_chartSeries, eval = T, echo = F, include = F >>=
+% 
+% chartSeries(MSFT,
+%             subset="2022-01-01::2023-01-01",
+%             theme=chartTheme('white'))
+% 
+% @
+% 
+% 
+% <<zad3_MACD_chartSeries_1, eval = T, echo = F, results='asis', fig.cap = "", fig.height=8, fig.width=8 >>=
+% 
+% addMACD(fast = 12, slow = 26, signal = 9, type = "EMA", col = c("slateblue4", "lightblue", "blue", "orchid1"))
+% 
+% @
+% 
+% <<zad3_RSI_chartSeries, eval = T, echo = F, include = F>>=
+% chartSeries(MSFT,
+%             subset="2022-01-01::2023-01-01",
+%             theme=chartTheme('white'))
+% 
+% @
+% 
+% 
+% <<zad3_RSI_chartSeries_2, eval = T, echo = F, results='asis', fig.cap = "Wykres RSI(14) z poziomem wykupienia=70 i poziomem wyprzedania=30", fig.height=8, fig.width=8 >>=
+% 
+% addRSI(n = 14, maType = "EMA", wilder = TRUE)
+% 
+% @
+% 
+% 
+% <<zad3_SMI_chartSeries, eval = T, echo = F, results='asis',include = F>>=
+% 
+% chartSeries(MSFT,
+%             subset="2022-01-01::2023-01-01",
+%             theme=chartTheme('white'))
+% 
+% @
+% 
+% <<zad3_SMI_2_chartSeries, eval = T, echo = F, results='asis', fig.cap = "Wykres dla wskaźnika STS", fig.height=8, fig.width=8 >>=
+% 
+% 
+% addSMI(n=13,slow=2,fast=25,signal=9, ma.type="EMA")
+% 
+% @
+% 
+
+% 
+% <<zad3_WB_chartSeries, echo=FALSE, eval=TRUE, warning=FALSE, fig.height=9, fig.width=8, include=FALSE>>=
+% chartSeries(MSFT,
+%             subset="2022-01-01::2023-01-01",
+%             theme=chartTheme('white'))
+% @
+% % 
+% 
+% <<zad3_WB_2_chartSeries, echo=FALSE, eval=TRUE, warning=FALSE, fig.height=9, fig.width=8>>=
+% addBBands(n = 20, sd = 2, maType = "SMA", draw = 'bands', on = -1)
+% @
+
+% 
+% 
+% <<zad3_SMA_chartSeries, echo=FALSE, eval=TRUE, warning=FALSE, fig.height=9, fig.width=8, include=FALSE>>=
+% getSymbols("MSFT", src="yahoo",from="2020-01-01")
+% chartSeries(MSFT,
+%             subset="2022-01-01::2023-01-01",
+%             theme=chartTheme('white'))
+% @
+% %
+% <<zad3_SMA_2_chartSeries, echo=FALSE, eval=TRUE, warning=FALSE, fig.height=9, fig.width=8>>=
+% 
+% addSMA(n = 14, col = "red")
+% @
+% 
+% 
+
+
+
+
+\subsection{Wpływ wyboru parametrów dla poszczególnych wskaźników na otrzymane wnioski}
+
+\subsubsection{MACD}
+
+Zmienimy parametry wskaźnika \textit{MACD} i porównamy wyniki do wyników otrzymanych na rysunku \ref{fig:zad3_MACD}.\\
+Ustawiamy parametry wskaźnika, definiując:\\
+  - okresy dla linii szybkiej (15), \\
+  - linii wolnej (30)\\
+  - linii sygnałowej (50). 
+
+
+<<zad4_MACD, eval = T, echo = F, results='asis', fig.cap = "Wykres wskaźnika MACD(15,30,50) - rok 2022 ", fig.height=6, fig.width=8 >>=
+
+# Wskaźnik MACD
+
+macd <- MACD(cena, nFast = 15, nSlow = 30, nSig =50)
+
+macdLine <- macd$macd
+signalLine <- macd$signal
+histogram <- macdLine - signalLine
+
+# Tworzenie wektora dat z indeksu
+dates <- index(cena)
+# Tworzenie wykresu MACD z punktami przecięcia
+plot(index(cena), macdLine, type = "l", col = "lightblue", xlab = "Data", ylab = "Wartosc", main = "Wskaznik MACD")
+lines(index(cena), signalLine, col = "slateblue4", lty = 2)
+
+# Dodanie histogramu
+for (i in seq_along(histogram)) {
+  if (!is.na(histogram[i])) {
+    if (histogram[i] >= 0) {
+      segments(index(cena)[i], 0, index(cena)[i], histogram[i], col = "blue")
+    } else {
+      segments(index(cena)[i], 0, index(cena)[i], histogram[i], col = "orchid")
+    }
+  }
+}
+
+# Dodanie siatki
+grid(col = "gray", lty = "dotted")
+
+# Dodanie legendy
+legend("topright", legend = c("MACD Line", "Signal Line"), 
+       col = c("lightblue", "slateblue4"), lty = c(1, 2))
+
+
+@
+
+\textbf{Wnioski:}\\
+
+\begin{itemize}
+
+\item Zwiększenie okresów dla linii szybkiej, wolnej i sygnałowej skutkowało wyższymi wartościami histogramu na rysunku \ref{fig:zad4_MACD}. To może wynikać z większej różnicy między wartościami MACD Line a Signal Line, co z kolei podkreśla dynamikę zmian między tymi liniami.
+
+\item Zwiększenie okresu dla linii sygnałowej (z 9 do 50) sprawiło, że linia ta stała się mniej dopasowana. To może prowadzić do dłuższych okresów utrzymania pozycji na rynku, ale jednocześnie wprowadzać opóźnienia w identyfikacji zmian trendu.
+
+\item W przypadku rysunku \ref{fig:zad4_MACD} można zauważyć, że histogram rzadziej przecina poziom zero w porównaniu do rysunku \ref{fig:zad3_MACD} . Mniejsza liczba przejść przez zero może sugerować, że sygnały generowane przez wskaźnik są bardziej długoterminowe, a zmiany trendu są identyfikowane z większym opóźnieniem. 
+
+\end{itemize}
+
+
+\subsubsection{SMI}
+
+Zmienimy parametry wskaźnika \textit{SMI} i porównamy wyniki do wyników otrzymanych na rysunku \ref{fig:zad3_SMI_2}.\\
+Ustawiamy parametry wskaźnika, definiując:\\
+- liczbę okresów (5) \\
+- liczbę okresów używanych do obliczenia linii \%K (10)\\
+- liczbę okresów używanych do obliczenia linii \%D (20)\\
+- liczbę okresów używanych do obliczenia linii sygnałowej (30).
+
+
+<<zad4_SMI_2, eval = T, echo = F, results='asis', fig.cap = "Wykres dla wskaźnika SMI(9,10,20,30) - rok 2022", fig.height=6, fig.width=8 >>=
+
+
+# Wskaźnik SMI
+smi <- SMI(cena, n = 5, nFast = 10, nSlow = 20, nSig = 30)
+
+dates <- index(cena)
+
+# Tworzenie wykresu SMI
+plot(dates, smi$SMI, type = "l", col = "blue", xlab = "Data", ylab = "SMI", main = "Wskaznik SMI")
+lines(dates, smi$signal, col = "plum", lty = 2)
+
+# Dodanie siatki
+grid(col = "gray", lty = "dotted")
+
+abline(h = 40, col = "red")
+abline(h = -40, col = "lightgreen")
+# Dodanie legendy
+legend("topright", legend = c("SMI", "Signal", "Obszary wykupienia", "Obszary wyprzedania"), col = c("blue", "plum", "red", "lightgreen"), lty = c(1, 1))
+
+
+
+
+@
+
+\textbf{Wnioski:}\\
+
+\begin{itemize}
+\item Zmiana okresu parametrów doprowadziła do zmniejszenia ilości obszarów wyprzedania i wykupienia.
+
+\item Zmiana parametrów wpłynęła również na dopasowanie linii sygnałowej.
+
+\item Na wykresie \ref{fig:zad4_SMI_2} linia sygnałowa rzeczywiście nie przekracza wartości +40 i -40, co wskazuje na bardziej umiarkowane i mniej skrajne sygnały w porównaniu do wykresu \ref{fig:zad3_SMI_2}. Może to oznaczać, że zmienione parametry bardziej skupiają się na sygnałach o mniejszym ryzyku, pomijając skrajne warunki rynkowe.
+
+\end{itemize} 
+\subsubsection{Wstęga Bollingera}
+
+Zmienimy parametry wskaźnika \textit{Wstęga Bollingera} i porównamy wyniki do wyników otrzymanych na rysunku \ref{fig:zad3_WB_22}.\\
+Ustawiamy parametry wskaźnika, definiując:\\
+- okres dla średniej kroczącej (10).\\
+- współczynnik mnożenia odchylenia standardowego (2).
+
+<<zad4_WB, eval = T, echo = F, include = F>>=
+
+
+# Wskaźnik Wstęgi Bollingera
+n <- 10  # okres dla średniej kroczącej
+k <- 2   # współczynnik mnożenia odchylenia standardowego
+
+# Obliczenie średniej kroczącej
+sma <- SMA(cena, n = n)
+
+# Obliczenie odchylenia standardowego
+sd <- k * rollapply(cena, n, sd, fill = NA, align = "right")
+
+# Wstęga górna
+upper <- sma + sd
+
+# Wstęga dolna
+lower <- sma - sd
+
+# Tworzenie wektora dat z indeksu
+dates <- index(cena)
+
+@
+
+<<zad4_WB_2, eval = T, echo = F, results='asis', fig.cap = "Wykres dla wskaźnika Wstęga Bollingera - rok 2022", fig.height=6, fig.width=8 >>=
+
+# Tworzenie wykresu Wstęgi Bollingera
+plot(dates, cena, type = "l", col = "black", xlab = "Data", ylab = "Cena zamkniecia", main = "Wstega Bollingera")
+lines(dates, sma, col = "cyan", lty = 2)
+lines(dates, upper, col = "blue", lty = 2)
+lines(dates, lower, col = "palegreen4", lty = 2)
+# Dodanie siatki
+grid(col = "gray", lty = "dotted")
+# Dodanie legendy
+legend("topright", legend = c("Cena zamkniecia", "Srednia kroczaca", "Wstega gorna", "Wstega dolna"), 
+       col = c("black", "cyan", "blue", "palegreen3"), lty = c(1, 2, 2, 2))
+
+@
+
+\textbf{Wnioski:}\\
+
+\begin{itemize}
+
+\item Linia średniej kroczącej i wstęgi górna/dolna są bardziej zbliżone do ceny zamknięcia, co skutkuje częstszymi zmianami sygnałów.
+
+\item Na wykresie \ref{fig:zad4_WB_2}  odległość między wstęgą górną a dolną jest mniejsza w porównaniu do wykresu \ref{fig:zad3_WB_2}. To oznacza, że zmienione parametry sprawiły, że wstęgi są bardziej zbliżone do siebie, co sugeruje mniejszą zmienność cenową w analizowanym okresie.
+
+
+\end{itemize}
+
+\subsubsection{RSI}
+
+Zmienimy parametry wskaźnika \textit{RSI} i porównamy wyniki do wyników otrzymanych na rysunku \ref{fig:zad3_RSI_2}.\\
+Ustawiamy parametry wskaźnika, definiując:\\
+- okres (5)\\
+- poziom wykupienia (70) jest to poziom, powyżej którego \textit{RSI} sygnalizuje, że dany instrument finansowy może być przekupiony. Na wykresie jest oznaczony niebieską linią.\\
+- poziom wyprzedania (30) jest to poziom, poniżej którego \textit{RSI} sygnalizuje, że dany instrument finansowy może być przeceniony. Na wykresie jest oznaczony fioletową linią.
+
+<<zad4_RSI, eval = T, echo = F, include = F>>=
+
+# Wskaźnik impetu: RSI [RSI.5] za pomocą RSI()
+RSI.5 <- RSI(cena, n=5)
+
+# Liczba notowań [len] oraz [poziom.wykupienia] i [poziom.wyprzedania] jako xts
+len <- length(index(msft))
+poziom.wykupienia <- xts(x=rep(70, len),
+                         order.by = index(msft))
+poziom.wyprzedania <- xts(x=rep(30, len),
+                          order.by = index(msft))
+
+# Wykres [RSI.14] z zaznaczonymi poziomami: wykupienia=70 i wyprzedania=30
+plot(RSI.5,
+     main="Wskaznik RSI",
+     xlab="Data",
+     ylab="Cena zamkniecia spolka Microsoft",
+     grid.ticks.lty = 2, main.timespan = FALSE, yaxis.right=FALSE)
+lines(poziom.wykupienia, col="blue")
+
+
+
+addLegend("topright", on=1,
+          legend.names = c("Cena zamkniecia", "Poziom wykupienia", "Poziom wyprzedania"),
+          lty=c(1, 1, 1), lwd=c(1,1,1),
+          col=c("black", "blue","plum"))
+
+@
+
+<<zad4_RSI_2, eval = T, echo = F, results='asis', fig.cap = "Wykres dla wskaźnika RSI(5) - rok 2022", fig.height=6, fig.width=8 >>=
+
+lines(poziom.wyprzedania, col="plum")
+
+@
+
+
+\textbf{Wnioski:}\\
+
+\begin{itemize}
+
+\item Zmiana okresu \textit{RSI} na 5 skutkuje bardziej dynamicznymi oscylacjami wskaźnika wokół poziomów 30 i 70. 
+
+\item W przypadku \textit{RSI.5} obserwujemy więcej przekroczeń poziomu 30, czyli częstsze obszary potencjalnego wyprzedania. Jednocześnie, liczba przekroczeń poziomu 70 znacznie wzrasta, stąd mamy częstsze obszary potencjalnego wykupienia.
+
+\item Brak utrzymania się \textit{RSI.5} w obszarze wyprzedania i wykupienia na dłuższe okresy czasu świadczy o większej zmienności i krótszych trendach na rynku.
+
+\end{itemize}
+
+\subsubsection{SMA}
+Zmienimy parametry wskaźnika \textit{SMA} i porównamy wyniki do wyników otrzymanych na rysunku \ref{fig:zad3_SMA_2}.\\
+Ustawiamy parametry wskaźnika, definiując:\\
+- okres krótkoterminowy (5) - granatowa linia, \\
+- okres długoterminowy (30) -  niebieska linia.
+
+
+<<zad4_SMA, eval = T, echo = F, include = F>>=
+
+# Wskaźnik trendu: SMA [SMA.50/SMA.200] za pomocą SMA()
+SMA.5 <- SMA(x=cena, n=5)
+SMA.30 <- SMA(x=cena, n=30)
+
+# Wykres ceny zamknięcia oraz SMA.5 i SMA.30 - alternatywnie dla xts:
+plot(cena,
+     main="Wskaznik SMA",
+     ylab="Cena zamkniecia",
+     grid.ticks.lty = 2, main.timespan = FALSE, yaxis.right=FALSE)
+lines(SMA(x=cena, n=5), col="lightblue", lwd=2)
+
+addLegend("topright", on=1,
+          legend.names = c("Cena zamkniecia", "SMA(5)", "SMA(30)"),
+          lty=c(1, 1, 1), lwd=c(1,2,2),
+          col=c("black", "lightblue", "blue"))
+
+@
+
+<<zad4_SMA_2, eval = T, echo = F, results='asis', fig.cap = "Wykres dla wskaźnika SMA(14,15) - rok 2022", fig.height=7, fig.width=8>>=
+lines(SMA(x=cena, n=30), col='blue', lwd=2)
+@
+
+\textbf{Wnisoki:}\\
+
+\begin{itemize}
+
+\item W przypadku zmienionych parametrów, krótkoterminowa linia jak i długoterminowa bardziej reagują na nagłe zmiany cen w porównaniu do poprzednich parametrów \ref{fig:zad3_SMA_2}. Obserwujemy bardziej dynamiczną reakcję na zmienność cenową.
+
+\item Przecięcia krótkoterminowej i długoterminowej SMA są częstsze w przypadku krótszych okresów, stąd mamy więcej sygnałów handlowych.
+
+\end{itemize}
+
+
+\newpage
+
+\begin{thebibliography}{9}
+\bibitem{murphy1999}
+Murphy, J. J. (1999).
+\textit{Analiza Techniczna Rynków Finansowych}.
+WIG-Press, Warszawa.
+ISBN 83-904905-4-8.
+
+\end{thebibliography}
+
+\end{document}
